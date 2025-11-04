@@ -32,9 +32,7 @@ export const getSession = async (phone) => {
       try {
         return JSON.parse(raw);
       } catch {
-        console.warn(
-          `⚠️ Failed to parse session for ${phone}. Deleting corrupt key.`
-        );
+        console.warn(`⚠️ Failed to parse session for ${phone}. Deleting corrupt key.`);
         await redis.del(key);
         return null;
       }
@@ -92,13 +90,11 @@ export default async function handler(req, res) {
     const data = req.body;
     console.log("Received webhook:", JSON.stringify(data, null, 2));
 
-    // Validasi payload
     if (!data?.phone) {
       console.error("Invalid payload - missing phone:", data);
       return res.status(200).send("OK");
     }
 
-    // Extract info
     const from = data.phone;
     const rawMessage = data.message || "";
     const message = rawMessage.toLowerCase().trim();
@@ -109,7 +105,7 @@ export default async function handler(req, res) {
     console.log("=== INCOMING MESSAGE ===");
     console.log({ from, rawMessage, isFromMe, messageType, pushName });
 
-    // ========== FILTERING PESAN ==========
+    // ========== FILTERING ==========
     if (["true", true, "1", 1].includes(isFromMe)) {
       console.log("✋ Ignoring message from bot itself");
       return res.status(200).send("OK");
@@ -130,7 +126,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // Cek kredensial Wablas
     const apiKey = process.env.WABLAS_API_KEY;
     const secretKey = process.env.WABLAS_SECRET_KEY;
     const spreadsheetWebhook = process.env.SPREADSHEET_WEBHOOK;
@@ -145,13 +140,15 @@ export default async function handler(req, res) {
     // ========== HELPER KIRIM PESAN ==========
     const sendMessage = async (text) => {
       try {
-        // Tambahkan watermark di setiap pesan keluar
-        const messageWithWatermark = `${text}\n\n—\n_Coded by Damantine_`;
-
         const payload = {
-          data: [{ phone: from, message: messageWithWatermark }],
+          data: [
+            {
+              phone: from,
+              message: `${text}\n\n—\n_Coded by Damantine_`,
+            },
+          ],
         };
-        console.log(`📤 Sending message to ${from}...`);
+
         const response = await axios.post(
           `${WABLAS_BASE_URL}/send-message`,
           payload,
@@ -163,6 +160,7 @@ export default async function handler(req, res) {
             timeout: 15000,
           }
         );
+
         console.log("✅ Message sent:", response.data);
       } catch (error) {
         console.error("❌ Error sending message:", error.message);
@@ -170,8 +168,6 @@ export default async function handler(req, res) {
     };
 
     // ========== FLOW LOGIC ==========
-
-    // STEP 1: Menu utama (greeting)
     const greetings = [
       "hai",
       "halo",
@@ -190,6 +186,7 @@ export default async function handler(req, res) {
       "batal",
     ];
 
+    // STEP 1: Menu utama
     if (greetings.includes(message)) {
       await clearSession(from);
       const welcomeText =
@@ -199,11 +196,9 @@ export default async function handler(req, res) {
         MENU_LIST_TEXT;
 
       await sendMessage(welcomeText);
-      await new Promise((r) => setTimeout(r, 500));
       return res.status(200).send("OK");
     }
 
-    // Ambil session
     let session = await getSession(from);
     console.log(`Current session for ${from}:`, session);
 
@@ -222,29 +217,20 @@ export default async function handler(req, res) {
 
       await sendMessage(
         `${formTitle}\n\n` +
-          "Dimohon kesediaannya untuk mengisi data diri berikut:\n\n" +
-          "*Format pengisian:*\n" +
+          "Silakan isi data diri Anda dengan format berikut:\n\n" +
           "Nama: [Nama lengkap Anda]\n" +
           "Unit: [Unit organisasi]\n" +
           "Jabatan: [Jabatan Anda]\n" +
-          "Referensi Hari/Jam: [Hari/Tanggal dan Jam]\n\n" +
-          "*Contoh:*\n" +
-          "Nama: Budi Santoso\n" +
-          "Unit: Inspektorat\n" +
-          "Jabatan: Auditor Ahli Pertama\n" +
-          "Referensi Hari/Jam: Senin, 4 Nov 2025 - 10:00 WIB"
+          "Referensi Hari/Jam: [Hari, tanggal dan jam]\n\n" +
+          "Contoh:\nNama: Budi Santoso\nUnit: Inspektorat\nJabatan: Auditor Ahli Pertama\nReferensi Hari/Jam: Senin, 4 Nov 2025 - 10:00 WIB"
       );
       return res.status(200).send("OK");
     }
 
     // STEP 5: Isi form
-    // STEP 5: Isi form
     if (session?.step === "fill_form") {
       try {
-        // Bersihin dan siapin teks dari user
         const cleanText = rawMessage.replace(/\r/g, "").trim();
-
-        // Gunakan regex biar lebih fleksibel (bisa handle spasi acak & format rapi)
         const regex =
           /Nama\s*:\s*(.+)\n\s*Unit\s*:\s*(.+)\n\s*Jabatan\s*:\s*(.+)\n\s*Referensi\s*Hari\/Jam\s*:\s*(.+)/i;
         const match = cleanText.match(regex);
@@ -252,17 +238,15 @@ export default async function handler(req, res) {
         if (!match) {
           await sendMessage(
             "❌ *Pendaftaran Gagal!*\n\n" +
-              "Terjadi kesalahan saat menyimpan data Anda. Silakan kirim ulang format isian Anda.\n\n" +
-              "— Coded by Damantine"
+              "Format tidak sesuai. Silakan kirim ulang sesuai format berikut:\n\n" +
+              "Nama: [Nama Anda]\nUnit: [Unit Anda]\nJabatan: [Jabatan Anda]\nReferensi Hari/Jam: [Hari, tanggal dan jam]"
           );
           return res.status(200).send("OK");
         }
 
-        // Ambil hasil parsing dari regex
         const [, nama, unit, jabatan, waktu] = match.map((x) => x.trim());
         console.log("✅ Parsed form data:", { nama, unit, jabatan, waktu });
 
-        // Kirim ke spreadsheet webhook
         if (spreadsheetWebhook) {
           try {
             const payload = {
@@ -279,17 +263,14 @@ export default async function handler(req, res) {
             await axios.post(spreadsheetWebhook, payload, { timeout: 10000 });
             console.log("✅ Data sent to spreadsheet");
           } catch (error) {
-            console.error("❌ Error sending to spreadsheet:", error.message);
+            console.error("❌ Spreadsheet error:", error.message);
             await sendMessage(
-              "❌ *Pendaftaran Gagal!*\n\n" +
-                "Terjadi kesalahan saat menyimpan data Anda. Silakan kirim ulang format isian Anda.\n\n" +
-                "— Coded by Damantine"
+              "❌ *Pendaftaran Gagal!*\n\nTerjadi kesalahan saat menyimpan data Anda. Silakan kirim ulang format isian Anda."
             );
             return res.status(200).send("OK");
           }
         }
 
-        // Kirim balasan sukses
         await sendMessage(
           "✅ *Pendaftaran Berhasil!*\n\n" +
             `Nama: ${nama}\n` +
@@ -298,9 +279,8 @@ export default async function handler(req, res) {
             `Referensi Hari/Jam: ${waktu}\n` +
             `Layanan: ${session.layanan}\n` +
             `Metode: ${session.metode}\n\n` +
-            "Terima kasih telah menghubungi Klinik Konsultasi Inspektorat.\n\n" +
-            "Ketik *MENU* untuk layanan lainnya.\n\n" +
-            "— Coded by Damantine"
+            "Terima kasih telah menghubungi *Klinik Konsultasi Inspektorat*.\n" +
+            "Ketik *MENU* untuk layanan lainnya."
         );
 
         await clearSession(from);
@@ -308,9 +288,7 @@ export default async function handler(req, res) {
       } catch (error) {
         console.error("🔥 Error parsing form:", error);
         await sendMessage(
-          "❌ *Pendaftaran Gagal!*\n\n" +
-            "Terjadi kesalahan sistem saat memproses data Anda. Silakan kirim ulang format isian Anda.\n\n" +
-            "— Coded by Damantine"
+          "❌ *Pendaftaran Gagal!*\n\nTerjadi kesalahan sistem saat memproses data Anda. Silakan kirim ulang format isian Anda."
         );
         return res.status(200).send("OK");
       }
@@ -320,9 +298,7 @@ export default async function handler(req, res) {
     if (session?.step === "chat_mode") {
       if (message === "menu") {
         await clearSession(from);
-        await sendMessage(
-          `*Menu Utama*\n\nSilakan pilih layanan:\n\n${MENU_LIST_TEXT}`
-        );
+        await sendMessage(`*Menu Utama*\n\n${MENU_LIST_TEXT}`);
         return res.status(200).send("OK");
       }
 
@@ -330,7 +306,7 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // STEP 2: Pilih layanan (1–4)
+    // STEP 2: Pilih layanan
     const layananMap = {
       1: "Tata Kelola & Manajemen Risiko",
       2: "Pengadaan Barang/Jasa",
@@ -339,12 +315,8 @@ export default async function handler(req, res) {
     };
 
     let layananTerpilih = null;
-    if (
-      !session ||
-      !["choose_method", "fill_form", "chat_mode"].includes(session?.step)
-    ) {
-      if (["1", "2", "3", "4"].includes(message))
-        layananTerpilih = layananMap[message];
+    if (!session || !["choose_method", "fill_form", "chat_mode"].includes(session?.step)) {
+      if (["1", "2", "3", "4"].includes(message)) layananTerpilih = layananMap[message];
     }
 
     if (layananTerpilih && !session) {
@@ -354,8 +326,7 @@ export default async function handler(req, res) {
       });
       await sendMessage(
         `Anda memilih:\n*${layananTerpilih}*\n\n` +
-          "Terima kasih atas pilihan Anda terhadap jenis layanan konsultasi.\n" +
-          "Mohon konfirmasi metode pelaksanaan konsultasi:\n\n" +
+          "Silakan pilih metode pelaksanaan konsultasi:\n\n" +
           "1. Offline (Tatap Muka)\n2. Online (Virtual)\n\n" +
           "Balas dengan *ANGKA* pilihan Anda (contoh: 1)."
       );
@@ -366,20 +337,14 @@ export default async function handler(req, res) {
     if ((message === "5" || message.includes("chat")) && !session) {
       await setSession(from, { step: "chat_mode" });
       await sendMessage(
-        "*Chat dengan Tim Inspektorat*\n\n" +
-          "Silakan ketik pesan Anda, dan tim kami akan merespons secepat mungkin.\n\n" +
-          "Ketik *MENU* untuk kembali ke menu utama."
+        "*Chat dengan Tim Inspektorat*\n\nSilakan ketik pesan Anda.\n\nKetik *MENU* untuk kembali ke menu utama."
       );
       return res.status(200).send("OK");
     }
 
     // Default: tidak dikenali
-    console.log(`❓ Unknown command from ${from}: "${rawMessage}"`);
     if (session?.step !== "chat_mode") {
-      await sendMessage(
-        "Maaf, saya tidak memahami perintah tersebut.\n" +
-          "Ketik *MENU* untuk melihat pilihan layanan."
-      );
+      await sendMessage("Maaf, saya tidak memahami perintah tersebut.\nKetik *MENU* untuk melihat layanan.");
     }
 
     return res.status(200).send("OK");
