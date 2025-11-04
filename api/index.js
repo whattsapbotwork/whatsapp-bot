@@ -11,13 +11,14 @@ const WABLAS_BASE_URL = "https://tegal.wablas.com/api/v2";
 const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 menit
 
 // ========== TEKS MENU UTAMA ==========
-const MENU_LIST_TEXT = [
-  "1. Tata Kelola & Manajemen Risiko",
-  "2. Pengadaan Barang/Jasa",
-  "3. Pengelolaan Keuangan & BMN",
-  "4. Kinerja & Kepegawaian",
-  "5. Chat dengan Tim Inspektorat",
-].join("\n") + "\n\nBalas dengan *ANGKA* pilihan Anda (contoh: 1).";
+const MENU_LIST_TEXT =
+  [
+    "1. Tata Kelola & Manajemen Risiko",
+    "2. Pengadaan Barang/Jasa",
+    "3. Pengelolaan Keuangan & BMN",
+    "4. Kinerja & Kepegawaian",
+    "5. Chat dengan Tim Inspektorat",
+  ].join("\n") + "\n\nBalas dengan *ANGKA* pilihan Anda (contoh: 1).";
 
 // ========== REDIS HELPER ==========
 export const getSession = async (phone) => {
@@ -31,7 +32,9 @@ export const getSession = async (phone) => {
       try {
         return JSON.parse(raw);
       } catch {
-        console.warn(`⚠️ Failed to parse session for ${phone}. Deleting corrupt key.`);
+        console.warn(
+          `⚠️ Failed to parse session for ${phone}. Deleting corrupt key.`
+        );
         await redis.del(key);
         return null;
       }
@@ -144,27 +147,47 @@ export default async function handler(req, res) {
       try {
         // Tambahkan watermark di setiap pesan keluar
         const messageWithWatermark = `${text}\n\n—\n_Coded by Damantine_`;
-    
-        const payload = { data: [{ phone: from, message: messageWithWatermark }] };
+
+        const payload = {
+          data: [{ phone: from, message: messageWithWatermark }],
+        };
         console.log(`📤 Sending message to ${from}...`);
-        const response = await axios.post(`${WABLAS_BASE_URL}/send-message`, payload, {
-          headers: { Authorization: authHeader, "Content-Type": "application/json" },
-          timeout: 15000,
-        });
+        const response = await axios.post(
+          `${WABLAS_BASE_URL}/send-message`,
+          payload,
+          {
+            headers: {
+              Authorization: authHeader,
+              "Content-Type": "application/json",
+            },
+            timeout: 15000,
+          }
+        );
         console.log("✅ Message sent:", response.data);
       } catch (error) {
         console.error("❌ Error sending message:", error.message);
       }
     };
 
-
     // ========== FLOW LOGIC ==========
 
     // STEP 1: Menu utama (greeting)
     const greetings = [
-      "hai", "halo", "hallo", "selamat pagi", "pagi",
-      "selamat siang", "siang", "selamat sore", "sore",
-      "selamat malam", "malam", "menu", "mulai", "start", "batal",
+      "hai",
+      "halo",
+      "hallo",
+      "selamat pagi",
+      "pagi",
+      "selamat siang",
+      "siang",
+      "selamat sore",
+      "sore",
+      "selamat malam",
+      "malam",
+      "menu",
+      "mulai",
+      "start",
+      "batal",
     ];
 
     if (greetings.includes(message)) {
@@ -215,34 +238,34 @@ export default async function handler(req, res) {
     }
 
     // STEP 5: Isi form
+    // STEP 5: Isi form
     if (session?.step === "fill_form") {
-      const lines = rawMessage.split("\n").map((l) => l.trim());
-      let nama = "", unit = "", jabatan = "", waktu = "";
+      try {
+        // Bersihin dan siapin teks dari user
+        const cleanText = rawMessage.replace(/\r/g, "").trim();
 
-      for (const line of lines) {
-        const lower = line.toLowerCase();
-        if (lower.startsWith("nama:")) nama = line.split(":")[1]?.trim() || "";
-        else if (lower.startsWith("unit:")) unit = line.split(":")[1]?.trim() || "";
-        else if (lower.startsWith("jabatan:")) jabatan = line.split(":")[1]?.trim() || "";
-        else if (lower.startsWith("referensi hari/jam:"))
-          waktu = line.split(":")[1]?.trim() || "";
-      }
+        // Gunakan regex biar lebih fleksibel (bisa handle spasi acak & format rapi)
+        const regex =
+          /Nama\s*:\s*(.+)\n\s*Unit\s*:\s*(.+)\n\s*Jabatan\s*:\s*(.+)\n\s*Referensi\s*Hari\/Jam\s*:\s*(.+)/i;
+        const match = cleanText.match(regex);
 
-      if (!nama || !unit || !jabatan || !waktu) {
-        await sendMessage(
-          "*Data tidak lengkap!*\n\nPastikan Anda mengisi semua field:\n" +
-            "✓ Nama\n✓ Unit\n✓ Jabatan\n✓ Referensi Hari/Jam\n\n" +
-            "Silakan kirim ulang dengan format yang benar."
-        );
-        return res.status(200).send("OK");
-      }
+        if (!match) {
+          await sendMessage(
+            "❌ *Pendaftaran Gagal!*\n\n" +
+              "Terjadi kesalahan saat menyimpan data Anda. Silakan kirim ulang format isian Anda.\n\n" +
+              "— Coded by Damantine"
+          );
+          return res.status(200).send("OK");
+        }
 
-      // Kirim ke spreadsheet
-      if (spreadsheetWebhook) {
-        try {
-          await axios.post(
-            spreadsheetWebhook,
-            {
+        // Ambil hasil parsing dari regex
+        const [, nama, unit, jabatan, waktu] = match.map((x) => x.trim());
+        console.log("✅ Parsed form data:", { nama, unit, jabatan, waktu });
+
+        // Kirim ke spreadsheet webhook
+        if (spreadsheetWebhook) {
+          try {
+            const payload = {
               timestamp: new Date().toISOString(),
               nomor: from,
               nama,
@@ -251,36 +274,55 @@ export default async function handler(req, res) {
               waktu,
               layanan: session.layanan,
               metode: session.metode,
-            },
-            { timeout: 10000 }
-          );
-          console.log("✅ Data sent to spreadsheet");
-        } catch (error) {
-          console.error("❌ Error sending to spreadsheet:", error.message);
-          await sendMessage(
-            "❌ *Pendaftaran Gagal!*\n\nTerjadi kesalahan saat menyimpan data Anda. " +
-              "Silakan kirim ulang format isian Anda."
-          );
-          return res.status(200).send("OK");
+            };
+
+            await axios.post(spreadsheetWebhook, payload, { timeout: 10000 });
+            console.log("✅ Data sent to spreadsheet");
+          } catch (error) {
+            console.error("❌ Error sending to spreadsheet:", error.message);
+            await sendMessage(
+              "❌ *Pendaftaran Gagal!*\n\n" +
+                "Terjadi kesalahan saat menyimpan data Anda. Silakan kirim ulang format isian Anda.\n\n" +
+                "— Coded by Damantine"
+            );
+            return res.status(200).send("OK");
+          }
         }
+
+        // Kirim balasan sukses
+        await sendMessage(
+          "✅ *Pendaftaran Berhasil!*\n\n" +
+            `Nama: ${nama}\n` +
+            `Unit: ${unit}\n` +
+            `Jabatan: ${jabatan}\n` +
+            `Referensi Hari/Jam: ${waktu}\n` +
+            `Layanan: ${session.layanan}\n` +
+            `Metode: ${session.metode}\n\n` +
+            "Terima kasih telah menghubungi Klinik Konsultasi Inspektorat.\n\n" +
+            "Ketik *MENU* untuk layanan lainnya.\n\n" +
+            "— Coded by Damantine"
+        );
+
+        await clearSession(from);
+        return res.status(200).send("OK");
+      } catch (error) {
+        console.error("🔥 Error parsing form:", error);
+        await sendMessage(
+          "❌ *Pendaftaran Gagal!*\n\n" +
+            "Terjadi kesalahan sistem saat memproses data Anda. Silakan kirim ulang format isian Anda.\n\n" +
+            "— Coded by Damantine"
+        );
+        return res.status(200).send("OK");
       }
-
-      await sendMessage(
-        "✅ *Pendaftaran Berhasil!*\n\n" +
-          `Nama: ${nama}\nUnit: ${unit}\nJabatan: ${jabatan}\n` +
-          `Referensi Hari/Jam: ${waktu}\nLayanan: ${session.layanan}\nMetode: ${session.metode}\n\n` +
-          "Terima kasih telah menghubungi Klinik Konsultasi Inspektorat.\n\nKetik *MENU* untuk layanan lainnya."
-      );
-
-      await clearSession(from);
-      return res.status(200).send("OK");
     }
 
     // MODE CHAT
     if (session?.step === "chat_mode") {
       if (message === "menu") {
         await clearSession(from);
-        await sendMessage(`*Menu Utama*\n\nSilakan pilih layanan:\n\n${MENU_LIST_TEXT}`);
+        await sendMessage(
+          `*Menu Utama*\n\nSilakan pilih layanan:\n\n${MENU_LIST_TEXT}`
+        );
         return res.status(200).send("OK");
       }
 
@@ -297,13 +339,19 @@ export default async function handler(req, res) {
     };
 
     let layananTerpilih = null;
-    if (!session || !["choose_method", "fill_form", "chat_mode"].includes(session?.step)) {
+    if (
+      !session ||
+      !["choose_method", "fill_form", "chat_mode"].includes(session?.step)
+    ) {
       if (["1", "2", "3", "4"].includes(message))
         layananTerpilih = layananMap[message];
     }
 
     if (layananTerpilih && !session) {
-      await setSession(from, { step: "choose_method", layanan: layananTerpilih });
+      await setSession(from, {
+        step: "choose_method",
+        layanan: layananTerpilih,
+      });
       await sendMessage(
         `Anda memilih:\n*${layananTerpilih}*\n\n` +
           "Terima kasih atas pilihan Anda terhadap jenis layanan konsultasi.\n" +
