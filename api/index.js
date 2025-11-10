@@ -144,7 +144,7 @@ export default async function handler(req, res) {
           data: [
             {
               phone: from,
-              message: `${text}\n\n—\n_Coded by Damantine_`,
+              message: text, // ⬅️ Sudah dihapus tambahan "Coded by Damantine"
             },
           ],
         };
