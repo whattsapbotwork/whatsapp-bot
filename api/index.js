@@ -279,7 +279,7 @@ export default async function handler(req, res) {
             `Referensi Hari/Jam: ${waktu}\n` +
             `Layanan: ${session.layanan}\n` +
             `Metode: ${session.metode}\n\n` +
-            "*Mohon untuk dapat mengisi link di bawah ini*\n" +
+            "*Mohon untuk dapat mengisi link di bawah ini:*\n" +
             "https://bit.ly/FormulirLayananKlinikKonsultansiPengawasan\n\n" +
             "Terima kasih telah menghubungi *Klinik Konsultasi Inspektorat Lembaga Kebijakan Pengadaan Barang/Jasa Pemerintah*.\n" +
             "Ketik *MENU* untuk layanan lainnya."
@@ -355,4 +355,5 @@ export default async function handler(req, res) {
     return res.status(200).send("OK");
   }
 }
+
 
